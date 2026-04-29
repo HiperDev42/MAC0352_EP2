@@ -1,0 +1,6 @@
+build/
+agent
+manager
+*.o
+*.out
+.DS_Store
