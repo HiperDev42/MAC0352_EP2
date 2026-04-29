@@ -1,4 +1,5 @@
 #include "server.hpp"
+#include "metrics.hpp"
 
 #include <csignal>
 #include <chrono>
@@ -11,53 +12,9 @@ using namespace std;
 
 #define AGENT_PORT 54001
 #define NUM_WORKER_THREADS 2
+#define METRIC_DELTA_TIME_MS 500
 
 SocketServer *g_agent_server = nullptr;
-
-struct CpuData {
-  long user, nice, system, idle, iowait, irq, softirq, steal;
-};
-
-CpuData read_cpu_data() {
-  std::ifstream stat_file("/proc/stat");
-  std::string line;
-  std::getline(stat_file, line);
-  
-  std::istringstream iss(line);
-  std::string cpu;
-  
-  CpuData data;
-  iss >> cpu
-      >> data.user
-      >> data.nice
-      >> data.system
-      >> data.idle
-      >> data.iowait
-      >> data.irq
-      >> data.softirq
-      >> data.steal;
-
-  return data;
-}
-
-double get_cpu_usage() {
-  CpuData cpu_data = read_cpu_data();
-  
-
-  return 0.0;
-}
-
-double get_memory_usage() {
-  return 0.0;
-}
-
-// Signal handler for graceful shutdown
-void signal_handler(int signum) {
-  cout << "\nAgent: Received signal " << signum << ", shutting down..." << endl;
-  if (g_agent_server) {
-    g_agent_server->stop();
-  }
-}
 
 // Override handle_client to process manager requests
 class AgentServer : public SocketServer {

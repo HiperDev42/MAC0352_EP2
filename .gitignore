@@ -1,6 +1,14 @@
 build/
+build-cmake/
 agent
 manager
 *.o
 *.out
 .DS_Store
+
+# CMake build artifacts
+CMakeCache.txt
+cmake_install.cmake
+CMakeFiles/
+CPackConfig.cmake
+CPackSourceConfig.cmake
