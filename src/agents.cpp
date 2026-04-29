@@ -85,34 +85,28 @@ private:
 };
 
 int main() {
-  while (true) {
-    cout << "CPU Usage: " << get_cpu_usage() << "%" << endl;
-    cout << "Memory Usage: " << get_memory_usage() << "%" << endl;
-    this_thread::sleep_for(chrono::seconds(1));
+  // Create agent server instance
+  AgentServer agent_server(AGENT_PORT, NUM_WORKER_THREADS);
+  g_agent_server = &agent_server;
+
+  // Setup signal handlers for graceful shutdown
+  signal(SIGINT, signal_handler);
+  signal(SIGTERM, signal_handler);
+
+  cout << "=== Agent Server ===" << endl;
+
+  // Initialize the server
+  if (!agent_server.initialize()) {
+    cerr << "Agent: Failed to initialize server" << endl;
+    return 1;
   }
 
-  // Create agent server instance
-  // AgentServer agent_server(AGENT_PORT, NUM_WORKER_THREADS);
-  // g_agent_server = &agent_server;
+  cout << "Agent: Ready to receive requests from manager" << endl;
+  cout << "Agent: Listening on port " << AGENT_PORT << endl;
+  cout << "Agent: Press Ctrl+C to shutdown" << endl << endl;
 
-  // // Setup signal handlers for graceful shutdown
-  // signal(SIGINT, signal_handler);
-  // signal(SIGTERM, signal_handler);
+  // Start accepting connections from manager
+  agent_server.start();
 
-  // cout << "=== Agent Server ===" << endl;
-
-  // // Initialize the server
-  // if (!agent_server.initialize()) {
-  //   cerr << "Agent: Failed to initialize server" << endl;
-  //   return 1;
-  // }
-
-  // cout << "Agent: Ready to receive requests from manager" << endl;
-  // cout << "Agent: Listening on port " << AGENT_PORT << endl;
-  // cout << "Agent: Press Ctrl+C to shutdown" << endl << endl;
-
-  // // Start accepting connections from manager
-  // agent_server.start();
-
-  // return 0;
+  return 0;
 }

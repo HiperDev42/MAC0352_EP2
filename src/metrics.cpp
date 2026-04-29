@@ -6,6 +6,12 @@
 #include <sstream>
 #include <string>
 #include <thread>
+#include <unordered_map>
+
+
+//
+// Metrics collection functions
+//
 
 struct CpuData {
   long user, nice, system, idle, iowait, irq, softirq, steal;
@@ -51,6 +57,41 @@ double get_cpu_usage() {
   return 100.0 * (totalDiff - idleDiff) / totalDiff;
 }
 
+struct MemoryInfo {
+  long totalKB;
+  long availableKB;
+  long usedKB;
+  double usedPercent;
+};
+
+std::unordered_map<std::string, long> read_memory_info() {
+  std::ifstream file("/proc/meminfo");
+  std::string key;
+  long value;
+  std::string unit;
+
+  std::unordered_map<std::string, long> mem;
+
+  while (file >> key >> value >> unit) {
+    key.pop_back(); // remove ':'
+    mem[key] = value;
+  }
+
+  return mem;
+}
+
+MemoryInfo get_memory_info() {
+  auto mem = read_memory_info();
+  MemoryInfo info;
+  info.totalKB = mem["MemTotal"];
+  info.availableKB = mem["MemAvailable"];
+  info.usedKB = info.totalKB - info.availableKB;
+  info.usedPercent = 100.0 * info.usedKB / info.totalKB;
+  return info;
+}
+
 double get_memory_usage() {
-  return 0.0;
+  auto info = get_memory_info();
+
+  return info.usedPercent;
 }
