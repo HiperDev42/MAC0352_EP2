@@ -1,13 +1,10 @@
 CXX := g++
-CXXFLAGS := -Wall -Wextra -Werror -std=c++17 -O2 -I./src
+CXXFLAGS := -Wall -Wextra -Werror -std=c++17 -O2 -I./include
 
 SRC_DIR := src
 OBJ_DIR := build
 
-AGENT_SRC := $(SRC_DIR)/agents.cpp
-MANAGER_SRC := $(SRC_DIR)/manager.cpp
-
-AGENT_OBJ := $(OBJ_DIR)/agents.o
+AGENT_OBJ := $(OBJ_DIR)/agents.o $(OBJ_DIR)/server.o
 MANAGER_OBJ := $(OBJ_DIR)/manager.o
 
 AGENT_BIN := agent
@@ -18,7 +15,7 @@ MANAGER_BIN := manager
 all: $(AGENT_BIN) $(MANAGER_BIN)
 
 $(AGENT_BIN): $(AGENT_OBJ)
-	$(CXX) $(CXXFLAGS) $^ -o $@
+	$(CXX) $(CXXFLAGS) $^ -o $@ -pthread
 
 $(MANAGER_BIN): $(MANAGER_OBJ)
 	$(CXX) $(CXXFLAGS) $^ -o $@
@@ -26,10 +23,7 @@ $(MANAGER_BIN): $(MANAGER_OBJ)
 $(OBJ_DIR):
 	mkdir -p $(OBJ_DIR)
 
-$(AGENT_OBJ): $(AGENT_SRC) | $(OBJ_DIR)
-	$(CXX) $(CXXFLAGS) -c $< -o $@
-
-$(MANAGER_OBJ): $(MANAGER_SRC) | $(OBJ_DIR)
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp | $(OBJ_DIR)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 clean:
