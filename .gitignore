@@ -12,3 +12,5 @@ cmake_install.cmake
 CMakeFiles/
 CPackConfig.cmake
 CPackSourceConfig.cmake
+
+.vscode
