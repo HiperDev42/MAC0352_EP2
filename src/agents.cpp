@@ -1,12 +1,8 @@
-#include "server.hpp"
 #include "metrics.hpp"
+#include "server.hpp"
 
 #include <csignal>
-#include <chrono>
-#include <fstream>
 #include <iostream>
-#include <sstream>
-#include <thread>
 
 using namespace std;
 
@@ -16,10 +12,22 @@ using namespace std;
 
 SocketServer *g_agent_server = nullptr;
 
-// Override handle_client to process manager requests
+static void signal_handler(int signum) {
+  std::cout << "Agent: Caught signal " << signum << ", shutting down..."
+            << std::endl;
+
+  if (g_agent_server) {
+    g_agent_server->stop();
+  }
+
+  std::exit(0);
+}
+
 class AgentServer : public SocketServer {
 public:
   using SocketServer::SocketServer;
+
+  AgentServer(int port, int num_threads) : SocketServer(port, num_threads) {}
 
   void handle_client(int client_socket, sockaddr_in client_addr) override {
     try {
@@ -45,6 +53,8 @@ public:
   }
 
 private:
+  MetricsCollector metrics_collector;
+
   // Process incoming request from manager
   string process_request(const string &request) {
     // TODO: Implement actual agent logic here

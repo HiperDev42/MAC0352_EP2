@@ -1,0 +1,26 @@
+[
+{
+  "directory": "/home/hiperlunar/USP/mac0352/ep2",
+  "command": "/usr/bin/c++  -I/home/hiperlunar/USP/mac0352/ep2/include  -Wall -Wextra -Werror -O2 -std=gnu++17 -o CMakeFiles/agent.dir/src/agents.cpp.o -c /home/hiperlunar/USP/mac0352/ep2/src/agents.cpp",
+  "file": "/home/hiperlunar/USP/mac0352/ep2/src/agents.cpp",
+  "output": "CMakeFiles/agent.dir/src/agents.cpp.o"
+},
+{
+  "directory": "/home/hiperlunar/USP/mac0352/ep2",
+  "command": "/usr/bin/c++  -I/home/hiperlunar/USP/mac0352/ep2/include  -Wall -Wextra -Werror -O2 -std=gnu++17 -o CMakeFiles/agent.dir/src/server.cpp.o -c /home/hiperlunar/USP/mac0352/ep2/src/server.cpp",
+  "file": "/home/hiperlunar/USP/mac0352/ep2/src/server.cpp",
+  "output": "CMakeFiles/agent.dir/src/server.cpp.o"
+},
+{
+  "directory": "/home/hiperlunar/USP/mac0352/ep2",
+  "command": "/usr/bin/c++  -I/home/hiperlunar/USP/mac0352/ep2/include  -Wall -Wextra -Werror -O2 -std=gnu++17 -o CMakeFiles/agent.dir/src/metrics.cpp.o -c /home/hiperlunar/USP/mac0352/ep2/src/metrics.cpp",
+  "file": "/home/hiperlunar/USP/mac0352/ep2/src/metrics.cpp",
+  "output": "CMakeFiles/agent.dir/src/metrics.cpp.o"
+},
+{
+  "directory": "/home/hiperlunar/USP/mac0352/ep2",
+  "command": "/usr/bin/c++  -I/home/hiperlunar/USP/mac0352/ep2/include  -Wall -Wextra -Werror -O2 -std=gnu++17 -o CMakeFiles/manager.dir/src/manager.cpp.o -c /home/hiperlunar/USP/mac0352/ep2/src/manager.cpp",
+  "file": "/home/hiperlunar/USP/mac0352/ep2/src/manager.cpp",
+  "output": "CMakeFiles/manager.dir/src/manager.cpp.o"
+}
+]
