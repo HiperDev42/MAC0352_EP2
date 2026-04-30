@@ -6,7 +6,22 @@
 #include <sstream>
 #include <string>
 #include <thread>
+#include <sys/sysinfo.h>
 #include <unordered_map>
+
+
+MetricsCollector::MetricsCollector() : thread_id(-1), last_up_time(0) {
+  
+  struct sysinfo info;
+  if (sysinfo(&info) != 0) {
+    std::cerr << "MetricsCollector: Failed to get system uptime" << std::endl;
+    last_up_time = 0;
+  } else {
+    last_up_time = info.uptime;
+  }
+
+  thread_id = std
+}
 
 
 //
@@ -95,3 +110,45 @@ double get_memory_usage() {
 
   return info.usedPercent;
 }
+
+long read_net_tx_bytes(std::string interface) {
+  std::ifstream file("/sys/class/net/" + interface + "/statistics/tx_bytes");
+  long tx_bytes;
+  file >> tx_bytes;
+  return tx_bytes;
+}
+
+long read_net_rx_bytes(std::string interface) {
+  std::ifstream file("/sys/class/net/" + interface + "/statistics/rx_bytes");
+  long rx_bytes;
+  file >> rx_bytes;
+  return rx_bytes;
+}
+
+NetStats read_network_stats(std::string interface) {
+  NetStats stats;
+  stats.tx_bytes = read_net_tx_bytes(interface);
+  stats.rx_bytes = read_net_rx_bytes(interface);
+
+  return stats;
+}
+
+NetStats get_network_stats() {
+  std::string interface = "eth0"; // TODO: Make this configurable
+
+  NetStats a = read_network_stats(interface);
+  std::this_thread::sleep_for(std::chrono::milliseconds(500));
+  NetStats b = read_network_stats(interface);
+
+  NetStats delta;
+  delta.tx_bytes = b.tx_bytes - a.tx_bytes;
+  delta.rx_bytes = b.rx_bytes - a.rx_bytes;
+  return delta;
+}
+
+struct Metrics {
+  double cpuUsage;
+  MemoryInfo memoryInfo;
+  NetStats networkStats;
+}
+
