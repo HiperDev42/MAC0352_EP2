@@ -25,9 +25,19 @@ static void signal_handler(int signum) {
 
 class AgentServer : public SocketServer {
 public:
-  using SocketServer::SocketServer;
+  AgentServer(int port, int num_threads)
+      : SocketServer(port, num_threads),
+        metrics_collector(static_cast<double>(METRIC_DELTA_TIME_MS) / 1000.0) {}
 
-  AgentServer(int port, int num_threads) : SocketServer(port, num_threads) {}
+  void start() override {
+    metrics_collector.start();
+    SocketServer::start();
+  }
+
+  void stop() override {
+    metrics_collector.stop();
+    SocketServer::stop();
+  }
 
   void handle_client(int client_socket, sockaddr_in client_addr) override {
     try {

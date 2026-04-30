@@ -22,11 +22,12 @@ struct CpuData {
   long user, nice, system, idle, iowait, irq, softirq, steal;
 };
 
-// Helper functions (implemented in src/metrics.cpp)
-double get_cpu_usage();
-MemoryInfo get_memory_info();
-double get_memory_usage();
-NetStats get_network_stats();
+struct InstantMetrics {
+  double uptime_seconds;
+  CpuData cpu;
+  MemoryInfo memory_info;
+  NetStats network_stats;
+};
 
 struct NetworkUsage {
   double tx_rate; // in bytes per second
@@ -34,14 +35,16 @@ struct NetworkUsage {
 };
 
 struct MetricsData {
+  double uptime_seconds;
   double cpu_usage;
-  MemoryInfo memory_info;
+  double memory_usage;
   NetworkUsage network_usage;
 };
 
 class MetricsCollector {
- public:
-  MetricsCollector(double dt_seconds = 1.0, const std::string &network_interface = "eth0");
+public:
+  MetricsCollector(double dt_seconds = 1.0,
+                   const std::string &network_interface = "eth0");
   ~MetricsCollector();
 
   // Start the background collector thread. Safe to call multiple times.
@@ -53,15 +56,17 @@ class MetricsCollector {
   // Return the most recently collected metrics (thread-safe copy).
   MetricsData get_metrics();
 
- private:
+private:
   void run();
+  InstantMetrics collect_metrics();
+  void update_metrics();
 
   std::thread worker_thread;
   std::atomic<bool> running{false};
   std::mutex data_lock;
 
   MetricsData metrics{};
+  InstantMetrics last_metrics;
   double dt_seconds;
   std::string network_interface;
 };
-

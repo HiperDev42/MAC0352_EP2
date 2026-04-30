@@ -1,18 +1,12 @@
 #include "metrics.hpp"
 
 #include <chrono>
-#include "metrics.hpp"
-
-#include <chrono>
 #include <fstream>
 #include <iostream>
 #include <sstream>
 #include <string>
 #include <thread>
-#include <sys/sysinfo.h>
 #include <unordered_map>
-
-using namespace std::chrono_literals;
 
 // Read a snapshot of /proc/stat (first "cpu" line)
 CpuData read_cpu_data() {
@@ -26,26 +20,26 @@ CpuData read_cpu_data() {
   std::string cpu;
 
   CpuData data{};
-  iss >> cpu >> data.user >> data.nice >> data.system >> data.idle >> data.iowait >> data.irq >> data.softirq >> data.steal;
+  iss >> cpu >> data.user >> data.nice >> data.system >> data.idle >>
+      data.iowait >> data.irq >> data.softirq >> data.steal;
 
   return data;
 }
 
-double get_cpu_usage() {
-  CpuData a = read_cpu_data();
-  std::this_thread::sleep_for(100ms);
-  CpuData b = read_cpu_data();
-
+double calc_cpu_usage(CpuData a, CpuData b) {
   long idleA = a.idle + a.iowait;
   long idleB = b.idle + b.iowait;
 
-  long totalA = a.user + a.nice + a.system + a.idle + a.iowait + a.irq + a.softirq + a.steal;
-  long totalB = b.user + b.nice + b.system + b.idle + b.iowait + b.irq + b.softirq + b.steal;
+  long totalA = a.user + a.nice + a.system + a.idle + a.iowait + a.irq +
+                a.softirq + a.steal;
+  long totalB = b.user + b.nice + b.system + b.idle + b.iowait + b.irq +
+                b.softirq + b.steal;
 
   long totalDiff = totalB - totalA;
   long idleDiff = idleB - idleA;
 
-  if (totalDiff <= 0) return 0.0;
+  if (totalDiff <= 0)
+    return 0.0;
   return 100.0 * (totalDiff - idleDiff) / static_cast<double>(totalDiff);
 }
 
@@ -57,7 +51,8 @@ static std::unordered_map<std::string, long> read_meminfo_map() {
 
   std::unordered_map<std::string, long> mem;
   while (file >> key >> value >> unit) {
-    if (!key.empty() && key.back() == ':') key.pop_back();
+    if (!key.empty() && key.back() == ':')
+      key.pop_back();
     mem[key] = value;
   }
   return mem;
@@ -69,13 +64,9 @@ MemoryInfo get_memory_info() {
   info.totalKB = mem["MemTotal"];
   info.availableKB = mem["MemAvailable"];
   info.usedKB = info.totalKB - info.availableKB;
-  info.usedPercent = (info.totalKB > 0) ? (100.0 * info.usedKB / info.totalKB) : 0.0;
+  info.usedPercent =
+      (info.totalKB > 0) ? (100.0 * info.usedKB / info.totalKB) : 0.0;
   return info;
-}
-
-double get_memory_usage() {
-  auto info = get_memory_info();
-  return info.usedPercent;
 }
 
 long read_net_tx_bytes(const std::string &interface) {
@@ -99,36 +90,36 @@ NetStats read_network_stats(const std::string &interface) {
   return stats;
 }
 
-// Return delta (bytes) over a short sample interval (internal 100ms)
-NetStats get_network_stats() {
-  const std::string interface = "eth0";
-  NetStats a = read_network_stats(interface);
-  std::this_thread::sleep_for(100ms);
-  NetStats b = read_network_stats(interface);
-  NetStats delta;
-  delta.tx_bytes = b.tx_bytes - a.tx_bytes;
-  delta.rx_bytes = b.rx_bytes - a.rx_bytes;
-  return delta;
+double read_uptime_seconds() {
+  std::ifstream file("/proc/uptime");
+  double uptime_seconds = 0.0;
+  file >> uptime_seconds;
+  return uptime_seconds;
 }
 
 // MetricsCollector implementation
-MetricsCollector::MetricsCollector(double dt_seconds_, const std::string &network_interface_)
-    : worker_thread(), running(false), metrics(), dt_seconds(dt_seconds_), network_interface(network_interface_) {}
+MetricsCollector::MetricsCollector(double dt_seconds_,
+                                   const std::string &network_interface_)
+    : worker_thread(), running(false), metrics(), dt_seconds(dt_seconds_),
+      network_interface(network_interface_) {}
 
 MetricsCollector::~MetricsCollector() { stop(); }
 
 void MetricsCollector::start() {
   bool expected = false;
-  if (!running.compare_exchange_strong(expected, true)) return; // already running
+  if (!running.compare_exchange_strong(expected, true))
+    return; // already running
 
   worker_thread = std::thread([this]() { this->run(); });
 }
 
 void MetricsCollector::stop() {
   bool expected = true;
-  if (!running.compare_exchange_strong(expected, false)) return; // not running
+  if (!running.compare_exchange_strong(expected, false))
+    return; // not running
 
-  if (worker_thread.joinable()) worker_thread.join();
+  if (worker_thread.joinable())
+    worker_thread.join();
 }
 
 MetricsData MetricsCollector::get_metrics() {
@@ -137,31 +128,73 @@ MetricsData MetricsCollector::get_metrics() {
 }
 
 void MetricsCollector::run() {
-  using clock = std::chrono::steady_clock;
-  while (running.load()) {
-    auto start = clock::now();
-
-    double cpu = get_cpu_usage();
-    MemoryInfo mem = get_memory_info();
-
-    // Network: sample quickly to estimate rate
-    NetStats a = read_network_stats(network_interface);
-    std::this_thread::sleep_for(100ms);
-    NetStats b = read_network_stats(network_interface);
-    double deltaSec = 0.1; // 100ms
-    NetworkUsage netU{};
-    netU.tx_rate = (b.tx_bytes - a.tx_bytes) / deltaSec;
-    netU.rx_rate = (b.rx_bytes - a.rx_bytes) / deltaSec;
-
-    {
-      std::lock_guard<std::mutex> lk(data_lock);
-      metrics.cpu_usage = cpu;
-      metrics.memory_info = mem;
-      metrics.network_usage = netU;
-    }
-
-    auto elapsed = std::chrono::duration_cast<std::chrono::duration<double>>(clock::now() - start).count();
-    double to_sleep = dt_seconds - elapsed;
-    if (to_sleep > 0) std::this_thread::sleep_for(std::chrono::duration<double>(to_sleep));
+  if (dt_seconds <= 0.0) {
+    dt_seconds = 0.5;
   }
+
+  last_metrics = collect_metrics();
+
+  while (running.load()) {
+    std::this_thread::sleep_for(std::chrono::duration<double>(dt_seconds));
+    if (!running.load()) {
+      break;
+    }
+    update_metrics();
+
+    std::cout << "Metrics: CPU: " << metrics.cpu_usage << "%; "
+              << "Memory: " << metrics.memory_usage << "%; "
+              << "Network: tx " << metrics.network_usage.tx_rate << " rx "
+              << metrics.network_usage.rx_rate << std::endl;
+  }
+}
+
+InstantMetrics MetricsCollector::collect_metrics() {
+  double uptime_seconds = read_uptime_seconds();
+  CpuData cpu_data = read_cpu_data();
+  MemoryInfo memory_info = get_memory_info();
+  NetStats network_stats = read_network_stats(network_interface);
+
+  InstantMetrics metrics{uptime_seconds, cpu_data, memory_info, network_stats};
+
+  return metrics;
+}
+
+void MetricsCollector::update_metrics() {
+  InstantMetrics current_metrics = collect_metrics();
+
+  double cpu_usage = calc_cpu_usage(last_metrics.cpu, current_metrics.cpu);
+  double memory_usage = current_metrics.memory_info.usedPercent;
+
+  long tx_delta = current_metrics.network_stats.tx_bytes -
+                  last_metrics.network_stats.tx_bytes;
+  long rx_delta = current_metrics.network_stats.rx_bytes -
+                  last_metrics.network_stats.rx_bytes;
+  if (tx_delta < 0) {
+    tx_delta = 0;
+  }
+  if (rx_delta < 0) {
+    rx_delta = 0;
+  }
+
+  double uptime_delta =
+      current_metrics.uptime_seconds - last_metrics.uptime_seconds;
+
+  NetworkUsage network_usage{};
+  if (uptime_delta > 0.0) {
+    network_usage.tx_rate = tx_delta / uptime_delta;
+    network_usage.rx_rate = rx_delta / uptime_delta;
+  } else {
+    network_usage.tx_rate = 0.0;
+    network_usage.rx_rate = 0.0;
+  }
+
+  MetricsData new_data{current_metrics.uptime_seconds, cpu_usage, memory_usage,
+                       network_usage};
+
+  {
+    std::lock_guard<std::mutex> lk(data_lock);
+    metrics = new_data;
+  }
+
+  last_metrics = current_metrics;
 }

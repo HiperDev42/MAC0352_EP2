@@ -41,8 +41,8 @@ public:
   virtual ~SocketServer();
 
   bool initialize();
-  void start();
-  void stop();
+  virtual void start();
+  virtual void stop();
   virtual void handle_client(int client_socket, sockaddr_in client_addr) = 0;
 
 protected:
