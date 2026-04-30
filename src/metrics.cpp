@@ -140,11 +140,6 @@ void MetricsCollector::run() {
       break;
     }
     update_metrics();
-
-    std::cout << "Metrics: CPU: " << metrics.cpu_usage << "%; "
-              << "Memory: " << metrics.memory_usage << "%; "
-              << "Network: tx " << metrics.network_usage.tx_rate << " rx "
-              << metrics.network_usage.rx_rate << std::endl;
   }
 }
 

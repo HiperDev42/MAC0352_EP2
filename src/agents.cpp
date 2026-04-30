@@ -2,7 +2,9 @@
 #include "server.hpp"
 
 #include <csignal>
+#include <iomanip>
 #include <iostream>
+#include <sstream>
 
 using namespace std;
 
@@ -44,14 +46,16 @@ public:
       char client_ip[INET_ADDRSTRLEN];
       inet_ntop(AF_INET, &client_addr.sin_addr, client_ip, INET_ADDRSTRLEN);
 
-      // Read request from manager
-      string request = read_request(client_socket);
+      while (true) {
+        // Keep this connection open and serve multiple requests.
+        string request = read_request(client_socket);
+        if (request.empty()) {
+          break;
+        }
 
-      if (!request.empty()) {
         cout << "Agent: Received request from " << client_ip << ": " << request
              << endl;
 
-        // Process the request (example: echo it back)
         string response = process_request(request);
         send_response(client_socket, response);
       }
@@ -67,10 +71,18 @@ private:
 
   // Process incoming request from manager
   string process_request(const string &request) {
-    // TODO: Implement actual agent logic here
-    // For now, just echo back the request with "Agent processed:" prefix
-    cout << "Agent: Processing request..." << endl;
-    return "Agent processed: " + request;
+    (void)request;
+    MetricsData metrics = metrics_collector.get_metrics();
+
+    std::ostringstream response;
+    response << std::fixed << std::setprecision(2);
+    response << "uptime_seconds=" << metrics.uptime_seconds
+             << ";cpu_usage=" << metrics.cpu_usage
+             << ";memory_usage=" << metrics.memory_usage
+             << ";tx_rate=" << metrics.network_usage.tx_rate
+             << ";rx_rate=" << metrics.network_usage.rx_rate;
+
+    return response.str();
   }
 
   // Helper to read request (inherited but made accessible)
