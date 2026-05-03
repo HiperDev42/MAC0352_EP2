@@ -112,4 +112,34 @@ MetricsData AgentConn::request_metrics() {
   return data;
 }
 
-int main() { return 0; }
+int main() {
+  vector<string> agent_addresses = {
+      "127.0.0.1:54001",
+  };
+
+  for (string addr : agent_addresses) {
+    vector<string> parts = split(addr, ':');
+    if (parts.size() != 2) {
+      cerr << "Manager: Invalid agent address format: " << addr << endl;
+      continue;
+    }
+
+    string ip = parts[0];
+    uint16_t port = stoi(parts[1]);
+
+    AgentConn agent(ip, port);
+    if (!agent.connect()) {
+      cerr << "Manager: Failed to connect to agent at " << ip << ":" << port
+           << endl;
+      continue;
+    }
+
+    MetricsData data = agent.request_metrics();
+    cout << "Metrics from agent " << ip << ":" << port << " - "
+         << "CPU: " << data.cpu_usage << "%, \n"
+         << "Memory: " << data.memory_usage << "%, \n"
+         << "Uptime: " << data.uptime_seconds << "s, \n"
+         << "TX Rate: " << data.network_usage.tx_rate << " Mbps, \n"
+         << "RX Rate: " << data.network_usage.rx_rate << " Mbps" << endl;
+  }
+}
