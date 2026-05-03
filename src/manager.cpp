@@ -81,6 +81,18 @@ bool AgentConn::connect() {
     return false;
   }
 
+  timeval timeout;
+  timeout.tv_sec = 2;
+  timeout.tv_usec = 500000; // 500 ms
+
+  // Timeout para receber
+  setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, (const char *)&timeout,
+             sizeof(timeout));
+
+  // Timeout para enviar
+  setsockopt(client_socket, SOL_SOCKET, SO_SNDTIMEO, (const char *)&timeout,
+             sizeof(timeout));
+
   sockaddr_in agent_addr{};
   agent_addr.sin_family = AF_INET;
   agent_addr.sin_port = htons(port);
