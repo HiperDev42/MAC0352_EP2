@@ -6,8 +6,11 @@
 #include <iostream>
 #include <string>
 #include <sys/socket.h>
+#include <unistd.h>
 #include <unordered_map>
 #include <vector>
+
+const uint32_t UPDATE_INTERVAL_SECONDS = 1;
 
 using namespace std;
 
@@ -41,20 +44,29 @@ MetricsData parse_response(string response) {
   return data;
 }
 
-struct AgentConn {
+class AgentConn {
+  Socket client_socket = -1;
+  vector<MetricsData> metrics_history;
+  bool is_connected = false;
+
+  MetricsData request_metrics();
+
+public:
   string address = "";
   uint16_t port = 0;
 
-  Socket client_socket = -1;
-
-public:
   AgentConn(const std::string &addr, uint16_t port)
       : address(addr), port(port) {}
   bool connect();
-  MetricsData request_metrics();
+  MetricsData update_metrics();
+  void close();
 };
 
 bool AgentConn::connect() {
+  if (is_connected) {
+    return true;
+  }
+
   client_socket = socket(AF_INET, SOCK_STREAM, 0);
   if (client_socket < 0) {
     std::cerr << "Manager: Failed to create socket for agent " << address << ":"
@@ -78,7 +90,15 @@ bool AgentConn::connect() {
     return false;
   }
 
+  is_connected = true;
   return true;
+}
+
+void AgentConn::close() {
+  if (is_connected) {
+    ::close(client_socket);
+    is_connected = false;
+  }
 }
 
 MetricsData AgentConn::request_metrics() {
@@ -112,34 +132,65 @@ MetricsData AgentConn::request_metrics() {
   return data;
 }
 
+MetricsData AgentConn::update_metrics() {
+  MetricsData data = request_metrics();
+  metrics_history.push_back(data);
+
+  return data;
+}
+
+class Manager {
+  vector<AgentConn> agents;
+
+public:
+  Manager(vector<string> agent_addresses) {
+    for (string addr : agent_addresses) {
+      vector<string> parts = split(addr, ':');
+      if (parts.size() != 2) {
+        cerr << "Manager: Invalid agent address format: " << addr << endl;
+        continue;
+      }
+
+      string ip = parts[0];
+      uint16_t port = stoi(parts[1]);
+
+      agents.emplace_back(ip, port);
+    }
+  }
+
+  void run() {
+
+    for (AgentConn &agent : agents) {
+      if (!agent.connect()) {
+        cerr << "Manager: Failed to connect to agent " << agent.address << ":"
+             << agent.port << endl;
+      }
+    }
+
+    while (true) {
+      // Request metrics from all agents
+      for (AgentConn &agent : agents) {
+        MetricsData data = agent.update_metrics();
+        cout << "Metrics from agent " << agent.address << ":" << agent.port
+             << " - CPU: " << data.cpu_usage
+             << "%, Memory: " << data.memory_usage
+             << "%, Uptime: " << data.uptime_seconds
+             << "s, TX Rate: " << data.network_usage.tx_rate
+             << " Mbps, RX Rate: " << data.network_usage.rx_rate << " Mbps"
+             << endl;
+      }
+
+      // Wait some time before next request
+      this_thread::sleep_for(chrono::seconds(UPDATE_INTERVAL_SECONDS));
+    }
+  }
+};
+
 int main() {
   vector<string> agent_addresses = {
       "127.0.0.1:54001",
   };
 
-  for (string addr : agent_addresses) {
-    vector<string> parts = split(addr, ':');
-    if (parts.size() != 2) {
-      cerr << "Manager: Invalid agent address format: " << addr << endl;
-      continue;
-    }
-
-    string ip = parts[0];
-    uint16_t port = stoi(parts[1]);
-
-    AgentConn agent(ip, port);
-    if (!agent.connect()) {
-      cerr << "Manager: Failed to connect to agent at " << ip << ":" << port
-           << endl;
-      continue;
-    }
-
-    MetricsData data = agent.request_metrics();
-    cout << "Metrics from agent " << ip << ":" << port << " - "
-         << "CPU: " << data.cpu_usage << "%, \n"
-         << "Memory: " << data.memory_usage << "%, \n"
-         << "Uptime: " << data.uptime_seconds << "s, \n"
-         << "TX Rate: " << data.network_usage.tx_rate << " Mbps, \n"
-         << "RX Rate: " << data.network_usage.rx_rate << " Mbps" << endl;
-  }
+  Manager manager(agent_addresses);
+  manager.run();
 }

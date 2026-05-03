@@ -5,6 +5,7 @@
 #include <iomanip>
 #include <iostream>
 #include <sstream>
+#include <string>
 
 using namespace std;
 
@@ -116,9 +117,22 @@ private:
   }
 };
 
-int main() {
+int main(int argc, char* argv[]) {
+  // Parse port from command-line arguments, default to AGENT_PORT
+  int port = AGENT_PORT;
+  
+  if (argc > 1) {
+    try {
+      port = stoi(argv[1]);
+    } catch (const exception &e) {
+      cerr << "Agent: Invalid port number: " << argv[1] << endl;
+      cerr << "Usage: " << argv[0] << " [port]" << endl;
+      return 1;
+    }
+  }
+
   // Create agent server instance
-  AgentServer agent_server(AGENT_PORT, NUM_WORKER_THREADS);
+  AgentServer agent_server(port, NUM_WORKER_THREADS);
   g_agent_server = &agent_server;
 
   // Setup signal handlers for graceful shutdown
@@ -134,7 +148,7 @@ int main() {
   }
 
   cout << "Agent: Ready to receive requests from manager" << endl;
-  cout << "Agent: Listening on port " << AGENT_PORT << endl;
+  cout << "Agent: Listening on port " << port << endl;
   cout << "Agent: Press Ctrl+C to shutdown" << endl << endl;
 
   // Start accepting connections from manager
