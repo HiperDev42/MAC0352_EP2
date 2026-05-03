@@ -50,6 +50,7 @@ def main():
     try:
         # Start N agents on different ports
         base_port = 54001
+        agent_addrs = []
         for i in range(num_agents):
             port = base_port + i
             print(f"Starting agent {i} on port {port}...")
@@ -69,10 +70,12 @@ def main():
             thread.start()
             threads.append(thread)
 
+            agent_addrs.append(f"127.0.0.1:{port}")
+
         # Start manager
         print("Starting manager...")
         manager_process = subprocess.Popen(
-            [str(manager_exe)],
+            [str(manager_exe)] + agent_addrs,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=False,

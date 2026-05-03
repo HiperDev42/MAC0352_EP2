@@ -186,9 +186,11 @@ public:
   }
 };
 
-int main() {
-  vector<string> agent_addresses = {
-      "127.0.0.1:54001",
+int main(int argc, char *argv[]) {
+  vector<string> agent_addresses;
+
+  for (int i = 1; i < argc; i++) {
+    agent_addresses.push_back(argv[i]);
   };
 
   Manager manager(agent_addresses);
