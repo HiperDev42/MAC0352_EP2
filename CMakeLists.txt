@@ -22,6 +22,7 @@ target_link_libraries(agent PRIVATE pthread)
 # Manager executable
 add_executable(manager
     src/manager.cpp
+    src/utils.cpp
 )
 target_include_directories(manager PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 

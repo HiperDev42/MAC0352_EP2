@@ -1,14 +1,45 @@
 
 #include "metrics.hpp"
+#include "utils.hpp"
 #include <arpa/inet.h>
 #include <cstdint>
 #include <iostream>
 #include <string>
 #include <sys/socket.h>
+#include <unordered_map>
+#include <vector>
 
 using namespace std;
 
 using Socket = int;
+
+MetricsData parse_response(string response) {
+  vector<string> parts = split(response, ';');
+  unordered_map<string, string> kv_map;
+
+  for (string p : parts) {
+    vector<string> kv = split(p, '=');
+    if (kv.size() != 2) {
+      cerr << "Manager: Invalid response part: " << p << endl;
+      continue;
+    }
+
+    string key = kv[0];
+    string value = kv[1];
+
+    kv_map[key] = value;
+  }
+
+  MetricsData data{};
+
+  data.cpu_usage = stof(kv_map["cpu_usage"]);
+  data.memory_usage = stof(kv_map["memory_usage"]);
+  data.uptime_seconds = stof(kv_map["uptime_seconds"]);
+  data.network_usage.tx_rate = stof(kv_map["tx_rate"]);
+  data.network_usage.rx_rate = stof(kv_map["rx_rate"]);
+
+  return data;
+}
 
 struct AgentConn {
   string address = "";
@@ -76,6 +107,9 @@ MetricsData AgentConn::request_metrics() {
   }
 
   string response(buffer, bytes_read);
+
+  MetricsData data = parse_response(response);
+  return data;
 }
 
 int main() { return 0; }
