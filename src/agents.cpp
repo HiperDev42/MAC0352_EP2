@@ -28,9 +28,11 @@ static void signal_handler(int signum) {
 
 class AgentServer : public SocketServer {
 public:
-  AgentServer(int port, int num_threads)
+  AgentServer(int port, std::string interface, int num_threads)
       : SocketServer(port, num_threads),
-        metrics_collector(static_cast<double>(METRIC_DELTA_TIME_MS) / 1000.0) {}
+        metrics_collector(static_cast<double>(METRIC_DELTA_TIME_MS) / 1000.0) {
+    metrics_collector.network_interface = interface;
+  }
 
   void start() override {
     metrics_collector.start();
@@ -58,6 +60,8 @@ public:
              << endl;
 
         string response = process_request(request);
+
+        cout << "Response to " << client_ip << ": " << response << endl;
         send_response(client_socket, response);
       }
     } catch (const exception &e) {
@@ -117,10 +121,10 @@ private:
   }
 };
 
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[]) {
   // Parse port from command-line arguments, default to AGENT_PORT
   int port = AGENT_PORT;
-  
+
   if (argc > 1) {
     try {
       port = stoi(argv[1]);
@@ -131,9 +135,13 @@ int main(int argc, char* argv[]) {
     }
   }
 
+  std::string interface = "wlan0";
+  if (argc > 2) {
+    std::string interface = argv[2];
+  }
+
   // Create agent server instance
-  AgentServer agent_server(port, NUM_WORKER_THREADS);
-  g_agent_server = &agent_server;
+  AgentServer agent_server(port, interface, NUM_WORKER_THREADS);
 
   // Setup signal handlers for graceful shutdown
   signal(SIGINT, signal_handler);

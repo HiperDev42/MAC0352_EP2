@@ -8,6 +8,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 const uint32_t UPDATE_INTERVAL_SECONDS = 1;
@@ -16,7 +17,7 @@ using namespace std;
 
 using Socket = int;
 
-MetricsData parse_response(string response) {
+pair<MetricsData, bool> parse_response(string response) {
   vector<string> parts = split(response, ';');
   unordered_map<string, string> kv_map;
 
@@ -41,15 +42,20 @@ MetricsData parse_response(string response) {
   data.network_usage.tx_rate = stof(kv_map["tx_rate"]);
   data.network_usage.rx_rate = stof(kv_map["rx_rate"]);
 
-  return data;
+  return {data, true};
 }
+
+struct RequestMetricsResult {
+  bool success;
+  MetricsData data;
+};
 
 class AgentConn {
   Socket client_socket = -1;
   vector<MetricsData> metrics_history;
   bool is_connected = false;
 
-  MetricsData request_metrics();
+  RequestMetricsResult request_metrics();
 
 public:
   string address = "";
@@ -58,8 +64,9 @@ public:
   AgentConn(const std::string &addr, uint16_t port)
       : address(addr), port(port) {}
   bool connect();
-  MetricsData update_metrics();
+  RequestMetricsResult update_metrics();
   void close();
+  bool is_available() const { return is_connected; }
 };
 
 bool AgentConn::connect() {
@@ -101,7 +108,7 @@ void AgentConn::close() {
   }
 }
 
-MetricsData AgentConn::request_metrics() {
+RequestMetricsResult AgentConn::request_metrics() {
   const string request = "GET_METRICS";
   ssize_t bytes_sent =
       send(client_socket, request.c_str(), request.length(), 0);
@@ -109,7 +116,7 @@ MetricsData AgentConn::request_metrics() {
   if (bytes_sent < 0) {
     std::cerr << "Manager: Failed to send request to agent " << address << ":"
               << port << std::endl;
-    return {};
+    return {false, {}};
   }
 
   const int BUFFER_SIZE = 1024;
@@ -123,20 +130,36 @@ MetricsData AgentConn::request_metrics() {
   } else if (bytes_read == 0) {
     std::cerr << "Manager: Agent " << address << ":" << port
               << " closed connection" << std::endl;
-    return {};
+    return {false, {}};
   }
 
   string response(buffer, bytes_read);
 
-  MetricsData data = parse_response(response);
-  return data;
+  auto result = parse_response(response);
+
+  if (!result.second) {
+    return {false, {}};
+  }
+
+  auto data = result.first;
+
+  return {true, data};
 }
 
-MetricsData AgentConn::update_metrics() {
-  MetricsData data = request_metrics();
-  metrics_history.push_back(data);
+RequestMetricsResult AgentConn::update_metrics() {
+  RequestMetricsResult result = request_metrics();
 
-  return data;
+  if (!result.success) {
+    cerr << "Manager: Failed to get metrics from agent " << address << ":"
+         << port << endl;
+
+    close();
+    return {false, {}};
+  }
+
+  metrics_history.push_back(result.data);
+
+  return {true, result.data};
 }
 
 class Manager {
@@ -159,25 +182,33 @@ public:
   }
 
   void run() {
-
-    for (AgentConn &agent : agents) {
-      if (!agent.connect()) {
-        cerr << "Manager: Failed to connect to agent " << agent.address << ":"
-             << agent.port << endl;
-      }
-    }
-
     while (true) {
       // Request metrics from all agents
       for (AgentConn &agent : agents) {
-        MetricsData data = agent.update_metrics();
-        cout << "Metrics from agent " << agent.address << ":" << agent.port
-             << " - CPU: " << data.cpu_usage
-             << "%, Memory: " << data.memory_usage
-             << "%, Uptime: " << data.uptime_seconds
-             << "s, TX Rate: " << data.network_usage.tx_rate
-             << " Mbps, RX Rate: " << data.network_usage.rx_rate << " Mbps"
-             << endl;
+        if (!agent.is_available()) {
+          bool result = agent.connect();
+          if (!result) {
+            cerr << "Manager: Failed to reconnect to agent " << agent.address
+                 << ":" << agent.port << endl;
+            continue;
+          }
+        }
+
+        RequestMetricsResult result = agent.update_metrics();
+
+        if (result.success) {
+          MetricsData data = result.data;
+          cout << "Metrics from agent " << agent.address << ":" << agent.port
+               << " - CPU: " << data.cpu_usage
+               << "%, Memory: " << data.memory_usage
+               << "%, Uptime: " << data.uptime_seconds
+               << "s, TX Rate: " << data.network_usage.tx_rate / 1024
+               << " Kbps, RX Rate: " << data.network_usage.rx_rate / 1024
+               << " Kbps" << endl;
+        } else {
+          cout << "Agent invalid or disconnected: " << agent.address << ":"
+               << agent.port << endl;
+        }
       }
 
       // Wait some time before next request

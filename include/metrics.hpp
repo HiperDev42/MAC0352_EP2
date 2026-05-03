@@ -56,6 +56,8 @@ public:
   // Return the most recently collected metrics (thread-safe copy).
   MetricsData get_metrics();
 
+  std::string network_interface;
+
 private:
   void run();
   InstantMetrics collect_metrics();
@@ -68,5 +70,4 @@ private:
   MetricsData metrics{};
   InstantMetrics last_metrics;
   double dt_seconds;
-  std::string network_interface;
 };

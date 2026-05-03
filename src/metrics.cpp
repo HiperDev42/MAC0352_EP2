@@ -100,8 +100,8 @@ double read_uptime_seconds() {
 // MetricsCollector implementation
 MetricsCollector::MetricsCollector(double dt_seconds_,
                                    const std::string &network_interface_)
-    : worker_thread(), running(false), metrics(), dt_seconds(dt_seconds_),
-      network_interface(network_interface_) {}
+    : network_interface(network_interface_), worker_thread(), running(false),
+      data_lock(), metrics(), dt_seconds(dt_seconds_) {}
 
 MetricsCollector::~MetricsCollector() { stop(); }
 
@@ -164,6 +164,7 @@ void MetricsCollector::update_metrics() {
                   last_metrics.network_stats.tx_bytes;
   long rx_delta = current_metrics.network_stats.rx_bytes -
                   last_metrics.network_stats.rx_bytes;
+
   if (tx_delta < 0) {
     tx_delta = 0;
   }
