@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <iostream>
 #include <string>
+#include <iomanip>
+#include <unordered_set>
 #include <sys/socket.h>
 #include <unistd.h>
 #include <unordered_map>
@@ -17,11 +19,12 @@ using namespace std;
 
 using Socket = int;
 
-pair<MetricsData, bool> parse_response(string response) {
+pair<MetricsData, unordered_set<string>> parse_response(string response) {
   vector<string> parts = split(response, ';');
   unordered_map<string, string> kv_map;
 
   for (string p : parts) {
+    if (p.empty()) continue;
     vector<string> kv = split(p, '=');
     if (kv.size() != 2) {
       cerr << "Manager: Invalid response part: " << p << endl;
@@ -35,19 +38,41 @@ pair<MetricsData, bool> parse_response(string response) {
   }
 
   MetricsData data{};
+  unordered_set<string> present;
 
-  data.cpu_usage = stof(kv_map["cpu_usage"]);
-  data.memory_usage = stof(kv_map["memory_usage"]);
-  data.uptime_seconds = stof(kv_map["uptime_seconds"]);
-  data.network_usage.tx_rate = stof(kv_map["tx_rate"]);
-  data.network_usage.rx_rate = stof(kv_map["rx_rate"]);
+  try {
+    if (kv_map.count(".1.1")) {
+      data.cpu_usage = stof(kv_map[".1.1"]);
+      present.insert(".1.1");
+    }
+    if (kv_map.count(".1.2")) {
+      data.memory_usage = stof(kv_map[".1.2"]);
+      present.insert(".1.2");
+    }
+    if (kv_map.count(".1.3")) {
+      data.uptime_seconds = stof(kv_map[".1.3"]);
+      present.insert(".1.3");
+    }
+    if (kv_map.count(".2.1")) {
+      data.network_usage.tx_rate = stof(kv_map[".2.1"]);
+      present.insert(".2.1");
+    }
+    if (kv_map.count(".2.2")) {
+      data.network_usage.rx_rate = stof(kv_map[".2.2"]);
+      present.insert(".2.2");
+    }
+  } catch (const exception &e) {
+    cerr << "Manager: Failed to parse numeric value: " << e.what() << endl;
+    return {data, {}};
+  }
 
-  return {data, true};
+  return {data, present};
 }
 
 struct RequestMetricsResult {
   bool success;
   MetricsData data;
+  unordered_set<string> present_oids;
 };
 
 class AgentConn {
@@ -55,7 +80,7 @@ class AgentConn {
   vector<MetricsData> metrics_history;
   bool is_connected = false;
 
-  RequestMetricsResult request_metrics();
+  RequestMetricsResult request_metrics(const string &request);
 
 public:
   string address = "";
@@ -120,15 +145,14 @@ void AgentConn::close() {
   }
 }
 
-RequestMetricsResult AgentConn::request_metrics() {
-  const string request = "GET_METRICS";
+RequestMetricsResult AgentConn::request_metrics(const string &request) {
   ssize_t bytes_sent =
       send(client_socket, request.c_str(), request.length(), 0);
 
   if (bytes_sent < 0) {
     std::cerr << "Manager: Failed to send request to agent " << address << ":"
               << port << std::endl;
-    return {false, {}};
+    return {false, {}, {}};
   }
 
   const int BUFFER_SIZE = 1024;
@@ -138,40 +162,43 @@ RequestMetricsResult AgentConn::request_metrics() {
   if (bytes_read < 0) {
     std::cerr << "Manager: Failed to receive response from agent " << address
               << ":" << port << std::endl;
-    return {};
+    return {false, {}, {}};
   } else if (bytes_read == 0) {
     std::cerr << "Manager: Agent " << address << ":" << port
               << " closed connection" << std::endl;
-    return {false, {}};
+    return {false, {}, {}};
   }
 
   string response(buffer, bytes_read);
 
-  auto result = parse_response(response);
+  auto parsed = parse_response(response);
 
-  if (!result.second) {
-    return {false, {}};
+  if (parsed.second.empty()) {
+    return {false, {}, {}};
   }
 
-  auto data = result.first;
-
-  return {true, data};
+  auto data = parsed.first;
+  RequestMetricsResult out;
+  out.success = true;
+  out.data = data;
+  out.present_oids = parsed.second;
+  return out;
 }
 
 RequestMetricsResult AgentConn::update_metrics() {
-  RequestMetricsResult result = request_metrics();
+  RequestMetricsResult result = request_metrics(std::string("GET ."));
 
   if (!result.success) {
     cerr << "Manager: Failed to get metrics from agent " << address << ":"
          << port << endl;
 
     close();
-    return {false, {}};
+    return {false, {}, {}};
   }
 
   metrics_history.push_back(result.data);
 
-  return {true, result.data};
+  return result;
 }
 
 class Manager {
@@ -210,13 +237,26 @@ public:
 
         if (result.success) {
           MetricsData data = result.data;
+          auto &present = result.present_oids;
+
+          auto fmt = [&](double val) {
+            std::ostringstream os;
+            os << std::fixed << std::setprecision(2) << val;
+            return os.str();
+          };
+
+          string cpu = present.count(".1.1") ? fmt(data.cpu_usage) + "%" : string("N/A");
+          string mem = present.count(".1.2") ? fmt(data.memory_usage) + "%" : string("N/A");
+          string up = present.count(".1.3") ? fmt(data.uptime_seconds) + "s" : string("N/A");
+          string tx = present.count(".2.1") ? fmt(data.network_usage.tx_rate / 1024) + " Kbps" : string("N/A");
+          string rx = present.count(".2.2") ? fmt(data.network_usage.rx_rate / 1024) + " Kbps" : string("N/A");
+
           cout << "Metrics from agent " << agent.address << ":" << agent.port
-               << " - CPU: " << data.cpu_usage
-               << "%, Memory: " << data.memory_usage
-               << "%, Uptime: " << data.uptime_seconds
-               << "s, TX Rate: " << data.network_usage.tx_rate / 1024
-               << " Kbps, RX Rate: " << data.network_usage.rx_rate / 1024
-               << " Kbps" << endl;
+               << " - CPU: " << cpu
+               << ", Memory: " << mem
+               << ", Uptime: " << up
+               << ", TX Rate: " << tx
+               << ", RX Rate: " << rx << endl;
         } else {
           cout << "Agent invalid or disconnected: " << agent.address << ":"
                << agent.port << endl;

@@ -76,16 +76,60 @@ private:
 
   // Process incoming request from manager
   string process_request(const string &request) {
-    (void)request;
     MetricsData metrics = metrics_collector.get_metrics();
 
+    // Expected request format: "GET <oid>" where <oid> is ".", ".1", ".1.1", etc.
+    std::istringstream iss(request);
+    std::string cmd;
+    std::string oid;
+    iss >> cmd >> oid;
+
+    std::vector<std::pair<std::string, std::string>> pairs;
+    auto add = [&](const std::string &o, double val) {
+      std::ostringstream os;
+      os << std::fixed << std::setprecision(2) << val;
+      pairs.emplace_back(o, os.str());
+    };
+
+    if (cmd != "GET") {
+      // Unknown command - return empty response
+      return std::string();
+    }
+
+    if (oid.empty() || oid == ".") {
+      // Return all leaves
+      add(".1.1", metrics.cpu_usage);
+      add(".1.2", metrics.memory_usage);
+      add(".1.3", metrics.uptime_seconds);
+      add(".2.1", metrics.network_usage.tx_rate);
+      add(".2.2", metrics.network_usage.rx_rate);
+    } else if (oid == ".1") {
+      add(".1.1", metrics.cpu_usage);
+      add(".1.2", metrics.memory_usage);
+      add(".1.3", metrics.uptime_seconds);
+    } else if (oid == ".2") {
+      add(".2.1", metrics.network_usage.tx_rate);
+      add(".2.2", metrics.network_usage.rx_rate);
+    } else if (oid == ".1.1") {
+      add(".1.1", metrics.cpu_usage);
+    } else if (oid == ".1.2") {
+      add(".1.2", metrics.memory_usage);
+    } else if (oid == ".1.3") {
+      add(".1.3", metrics.uptime_seconds);
+    } else if (oid == ".2.1") {
+      add(".2.1", metrics.network_usage.tx_rate);
+    } else if (oid == ".2.2") {
+      add(".2.2", metrics.network_usage.rx_rate);
+    } else {
+      // Unknown OID - return empty
+      return std::string();
+    }
+
     std::ostringstream response;
-    response << std::fixed << std::setprecision(2);
-    response << "uptime_seconds=" << metrics.uptime_seconds
-             << ";cpu_usage=" << metrics.cpu_usage
-             << ";memory_usage=" << metrics.memory_usage
-             << ";tx_rate=" << metrics.network_usage.tx_rate
-             << ";rx_rate=" << metrics.network_usage.rx_rate;
+    for (size_t i = 0; i < pairs.size(); ++i) {
+      if (i) response << ";";
+      response << pairs[i].first << "=" << pairs[i].second;
+    }
 
     return response.str();
   }
@@ -137,8 +181,11 @@ int main(int argc, char *argv[]) {
 
   std::string interface = "wlan0";
   if (argc > 2) {
-    std::string interface = argv[2];
+    interface = argv[2];
   }
+
+  cout << "Agent: Starting with port=" << port << " and interface=" << interface
+       << endl;
 
   // Create agent server instance
   AgentServer agent_server(port, interface, NUM_WORKER_THREADS);
