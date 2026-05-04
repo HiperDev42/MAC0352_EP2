@@ -281,7 +281,7 @@ public:
             cout << "  " << get_oid_label(p.first) << " (" << p.first << "): " << p.second << endl;
           }
         } else {
-          cout << "Agent invalid or disconnected: " << agent.address << ":"
+          cout << "Agent timed out: invalid or disconnected: " << agent.address << ":"
                << agent.port << endl;
         }
       }
