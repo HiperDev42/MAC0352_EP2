@@ -12,12 +12,28 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <thread>
+#include <chrono>
+#include <sstream>
 
 const uint32_t UPDATE_INTERVAL_SECONDS = 1;
 
 using namespace std;
 
 using Socket = int;
+
+static const unordered_map<string, string> oid_labels = {
+    {".1.1", "CPU"},
+    {".1.2", "Memory"},
+    {".1.3", "Uptime"},
+    {".2.1", "Upload"},
+    {".2.2", "Download"}
+};
+
+static string get_oid_label(const string &oid) {
+  auto it = oid_labels.find(oid);
+  return it != oid_labels.end() ? it->second : string("Unknown");
+}
 
 pair<MetricsData, unordered_set<string>> parse_response(string response) {
   vector<string> parts = split(response, ';');
@@ -251,12 +267,19 @@ public:
           string tx = present.count(".2.1") ? fmt(data.network_usage.tx_rate / 1024) + " Kbps" : string("N/A");
           string rx = present.count(".2.2") ? fmt(data.network_usage.rx_rate / 1024) + " Kbps" : string("N/A");
 
-          cout << "Metrics from agent " << agent.address << ":" << agent.port
-               << " - CPU: " << cpu
-               << ", Memory: " << mem
-               << ", Uptime: " << up
-               << ", TX Rate: " << tx
-               << ", RX Rate: " << rx << endl;
+          cout << "Metrics from agent " << agent.address << ":" << agent.port << endl;
+
+          vector<pair<string, string>> metrics = {
+              {".1.1", cpu},
+              {".1.2", mem},
+              {".1.3", up},
+              {".2.1", tx},
+              {".2.2", rx},
+          };
+
+          for (auto &p : metrics) {
+            cout << "  " << get_oid_label(p.first) << " (" << p.first << "): " << p.second << endl;
+          }
         } else {
           cout << "Agent invalid or disconnected: " << agent.address << ":"
                << agent.port << endl;

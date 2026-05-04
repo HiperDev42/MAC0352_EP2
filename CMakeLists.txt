@@ -15,6 +15,7 @@ add_executable(agent
     src/agents.cpp
     src/server.cpp
     src/metrics.cpp
+    src/mib.cpp
 )
 target_include_directories(agent PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(agent PRIVATE pthread)

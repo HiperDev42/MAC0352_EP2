@@ -1,5 +1,6 @@
 #include "metrics.hpp"
 #include "server.hpp"
+#include "mib.hpp"
 
 #include <csignal>
 #include <iomanip>
@@ -32,6 +33,35 @@ public:
       : SocketServer(port, num_threads),
         metrics_collector(static_cast<double>(METRIC_DELTA_TIME_MS) / 1000.0) {
     metrics_collector.network_interface = interface;
+    using namespace mib;
+    Tree &t = global_tree();
+
+    // system
+    t.register_oid({1, 1}, "cpu_usage", [this]() {
+      MetricsData m = metrics_collector.get_metrics();
+      std::ostringstream os; os << std::fixed << std::setprecision(2) << m.cpu_usage; return os.str();
+    });
+
+    t.register_oid({1, 2}, "memory_usage", [this]() {
+      MetricsData m = metrics_collector.get_metrics();
+      std::ostringstream os; os << std::fixed << std::setprecision(2) << m.memory_usage; return os.str();
+    });
+
+    t.register_oid({1, 3}, "uptime_seconds", [this]() {
+      MetricsData m = metrics_collector.get_metrics();
+      std::ostringstream os; os << std::fixed << std::setprecision(2) << m.uptime_seconds; return os.str();
+    });
+
+    // network
+    t.register_oid({2, 1}, "upload_bytes", [this]() {
+      MetricsData m = metrics_collector.get_metrics();
+      std::ostringstream os; os << std::fixed << std::setprecision(2) << m.network_usage.tx_rate; return os.str();
+    });
+
+    t.register_oid({2, 2}, "download_bytes", [this]() {
+      MetricsData m = metrics_collector.get_metrics();
+      std::ostringstream os; os << std::fixed << std::setprecision(2) << m.network_usage.rx_rate; return os.str();
+    });
   }
 
   void start() override {
@@ -76,62 +106,14 @@ private:
 
   // Process incoming request from manager
   string process_request(const string &request) {
-    MetricsData metrics = metrics_collector.get_metrics();
-
-    // Expected request format: "GET <oid>" where <oid> is ".", ".1", ".1.1", etc.
+    // Expect format: "GET <oid>" - forward to MIB tree
     std::istringstream iss(request);
     std::string cmd;
     std::string oid;
     iss >> cmd >> oid;
+    if (cmd != "GET") return string();
 
-    std::vector<std::pair<std::string, std::string>> pairs;
-    auto add = [&](const std::string &o, double val) {
-      std::ostringstream os;
-      os << std::fixed << std::setprecision(2) << val;
-      pairs.emplace_back(o, os.str());
-    };
-
-    if (cmd != "GET") {
-      // Unknown command - return empty response
-      return std::string();
-    }
-
-    if (oid.empty() || oid == ".") {
-      // Return all leaves
-      add(".1.1", metrics.cpu_usage);
-      add(".1.2", metrics.memory_usage);
-      add(".1.3", metrics.uptime_seconds);
-      add(".2.1", metrics.network_usage.tx_rate);
-      add(".2.2", metrics.network_usage.rx_rate);
-    } else if (oid == ".1") {
-      add(".1.1", metrics.cpu_usage);
-      add(".1.2", metrics.memory_usage);
-      add(".1.3", metrics.uptime_seconds);
-    } else if (oid == ".2") {
-      add(".2.1", metrics.network_usage.tx_rate);
-      add(".2.2", metrics.network_usage.rx_rate);
-    } else if (oid == ".1.1") {
-      add(".1.1", metrics.cpu_usage);
-    } else if (oid == ".1.2") {
-      add(".1.2", metrics.memory_usage);
-    } else if (oid == ".1.3") {
-      add(".1.3", metrics.uptime_seconds);
-    } else if (oid == ".2.1") {
-      add(".2.1", metrics.network_usage.tx_rate);
-    } else if (oid == ".2.2") {
-      add(".2.2", metrics.network_usage.rx_rate);
-    } else {
-      // Unknown OID - return empty
-      return std::string();
-    }
-
-    std::ostringstream response;
-    for (size_t i = 0; i < pairs.size(); ++i) {
-      if (i) response << ";";
-      response << pairs[i].first << "=" << pairs[i].second;
-    }
-
-    return response.str();
+    return mib::global_tree().handle_get(oid);
   }
 
   // Helper to read request (inherited but made accessible)
