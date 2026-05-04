@@ -21,22 +21,9 @@
 
 \maketitle
 
-\begin{abstract}
-Este relatório apresenta a solução desenvolvida para o Trabalho Prático 2 da disciplina, cujo objetivo foi construir uma arquitetura distribuída composta por agentes de coleta, um gerenciador central e uma MIB simplificada para exposição de métricas do sistema. Também é descrita a ferramenta de visualização em Streamlit criada para acompanhar as métricas em tempo real.
-\end{abstract}
-
-\section{Introdução}
-O projeto implementa um sistema cliente-servidor em C++ para monitoramento de recursos da máquina. Cada \textit{agent} coleta dados locais do sistema operacional, o \textit{manager} consulta os agentes periodicamente e consolida as respostas, e a MIB organiza as métricas em uma árvore de OIDs que pode ser consultada por nome hierárquico. Como apoio à análise dos resultados, foi criado um dashboard em Streamlit para exibir os dados em gráficos.
-
-\section{Objetivos}
-Os principais objetivos do trabalho foram:
-\begin{itemize}
-	\item coletar métricas de CPU, memória, uptime e rede do sistema;
-	\item expor essas métricas por meio de uma interface baseada em OIDs;
-	\item permitir que um gerente central consulte múltiplos agentes;
-	\item manter a comunicação simples, textual e extensível;
-	\item disponibilizar uma visualização gráfica para acompanhamento em tempo real.
-\end{itemize}
+% \begin{abstract}
+% Este relatório apresenta a solução desenvolvida para o Trabalho Prático 2 da disciplina, cujo objetivo foi construir uma arquitetura distribuída composta por agentes de coleta, um gerenciador central e uma MIB simplificada para exposição de métricas do sistema. Também é descrita a ferramenta de visualização em Streamlit criada para acompanhar as métricas em tempo real.
+% \end{abstract}
 
 \section{Visão geral da arquitetura}
 O sistema é dividido em quatro partes principais:
@@ -56,34 +43,36 @@ O fluxo de uso é o seguinte:
 	\item para cada consulta, o manager envia comandos do tipo \texttt{GET <oid>};
 	\item o agent encaminha a consulta para a MIB e retorna uma resposta textual no formato \texttt{oid=valor;oid=valor;...};
 	\item o manager interpreta a resposta e exibe as métricas no terminal;
-	\item o dashboard pode consultar os mesmos agents para gerar gráficos e histórico.
 \end{enumerate}
 
 \section{Implementação dos agentes}
 O ponto de entrada do agent está em \texttt{src/agents.cpp}. Esse módulo configura o servidor, registra as métricas na MIB e trata o ciclo de vida do processo.
 
 \subsection{Coleta de métricas}
-A coleta é implementada em \texttt{src/metrics.cpp}. As métricas são obtidas diretamente de arquivos do Linux:
+As métricas coletadas são:
 \begin{itemize}
-	\item \texttt{/proc/stat} para calcular o uso de CPU por diferença entre snapshots;
+    \item uso de CPU em porcentagem;
+    \item uso de memória em porcentagem;
+    \item tempo de atividade do sistema em segundos;
+    \item taxa de upload e download em bytes por segundo.
+\end{itemize}
+
+Escolhemos essas métricas por serem representativas do estado geral do sistema e por serem facilmente obtidas a partir de arquivos do Linux, sem necessidade de bibliotecas externas.
+
+A coleta é implementada em \texttt{src/metrics.cpp}. As métricas são obtidas diretamente de arquivos:
+\begin{itemize}
+	\item \texttt{/proc/stat} para calcular o uso de CPU por diferença entre leituras consecutivas;
 	\item \texttt{/proc/meminfo} para calcular uso de memória;
 	\item \texttt{/proc/uptime} para obter o tempo de atividade do sistema;
 	\item \texttt{/sys/class/net/<iface>/statistics/tx\_bytes} e \texttt{rx\_bytes} para medir o tráfego da interface de rede.
 \end{itemize}
 
-O \texttt{MetricsCollector} executa em background e atualiza uma estrutura \texttt{MetricsData} com:
-\begin{itemize}
-	\item uso de CPU em porcentagem;
-	\item uso de memória em porcentagem;
-	\item uptime em segundos;
-	\item taxa de transmissão e recepção em bytes por segundo.
-\end{itemize}
+O \texttt{MetricsCollector} executa em background e atualiza uma estrutura \texttt{MetricsData}.
 
 \subsection{Servidor de sockets}
 O servidor genérico está em \texttt{src/server.cpp}. Ele implementa:
 \begin{itemize}
 	\item criação e configuração do socket TCP;
-	\item reutilização de endereço com \texttt{SO\_REUSEADDR};
 	\item aceitação de conexões;
 	\item fila de tarefas com \textit{worker pool};
 	\item leitura e envio de mensagens em texto puro.
@@ -122,17 +111,6 @@ Entre os principais pontos de implementação, destacam-se:
 	\item impressão periódica do estado de cada agent.
 \end{itemize}
 
-\section{Dashboard em Streamlit}
-Além do executável em C++, foi criado um dashboard em Python para observação visual do sistema. A interface lê as métricas coletadas pelos agents e exibe:
-\begin{itemize}
-	\item gráficos de CPU e memória ao longo do tempo;
-	\item gráfico com taxas de upload e download;
-	\item indicadores do estado da conexão;
-	\item tabela com o histórico recente das medições.
-\end{itemize}
-
-Essa camada não altera a lógica do sistema principal, mas facilita a validação experimental e a interpretação do comportamento dos agents.
-
 \section{Organização do projeto}
 Os principais arquivos do projeto são:
 \begin{longtable}{p{0.28\textwidth}p{0.64\textwidth}}
@@ -146,16 +124,48 @@ Arquivo & Função \\
 \texttt{src/mib.cpp} & Estrutura da árvore de OIDs e serialização das respostas. \\
 \texttt{src/manager.cpp} & Cliente responsável por consultar os agents e mostrar os resultados. \\
 \texttt{run.py} & Script auxiliar para iniciar múltiplos agents e o manager localmente. \\
-\texttt{dashboard.py} & Dashboard Streamlit para visualização gráfica das métricas. \\
 \bottomrule
 \end{longtable}
 
-\section{Execução}
-O projeto é compilado com CMake e possui dois executáveis principais: \texttt{agent} e \texttt{manager}. Para testes locais, o script \texttt{run.py} inicia múltiplos agents em portas consecutivas e depois executa o manager apontando para todos eles.
+\section{Experimentos e resultados}
 
-O dashboard pode ser executado separadamente para consumir os agents ativos e apresentar os gráficos em tempo real.
+\subsection{Comportamento do sistema sob falha de agentes}
+Realizamos testes desconectando um agent durante a execução do manager. O manager detectou a falha e tentou reconectar periodicamente, sem travar ou apresentar erros críticos. Quando o agent foi reiniciado, o manager conseguiu restabelecer a conexão e retomar a coleta de métricas normalmente.
 
-\section{Conclusão}
-A solução atende ao objetivo de monitorar métricas do sistema por meio de uma arquitetura distribuída simples, extensível e fácil de observar. O uso de OIDs organiza a exposição das métricas, o manager consolida as informações dos agents e o dashboard oferece uma visualização mais amigável para análise.
+Também simulamos um cenario de alta latência, onde o agent demorava a responder. O manager apresentou um timeout após um período configurável. Porém, o manager bloqueia a execução enquanto aguarda pelo timeout, o que pode ser melhorado com uma abordagem assíncrona.
+
+\subsection{Impacto do número de nós monitorados}
+
+Testamos o manager monitorando até 1000 agents. O manager conseguiu lidar com a carga, mas o tempo de consulta aumentou linearmente com o número de agents, devido à abordagem síncrona.
+
+\subsection{Latência de monitoramento}
+
+O tempo médio para receber uma resposta completa de um agent foi de menos de 1ms.
+Enquanto que o tempo de consulta para 1000 agents foi de cerca de 60ms e cresceu linearmente com o número de agents.
+A primeira requisição de um agent demorou mais, devido à inicialização da comunicação tcp com o agent. Em média, a primeira requisição levou o dobro do tempo das requisições subsequentes.
+
+\subsection{Overhead do protocolo de gerenciamento}
+
+O protocolo de texto puro é simples. O ovearhead de cada requisição é de cerca de 50 microssegundos nos agentes. O manager tem um overhead de cerca de 20 microssegundos por agente para processar a resposta. O overhead total é baixo, mas cresce linearmente com o número de agents monitorados.
+
+\subsection{Escalabilidade do sistema}
+
+O sistema é escalável até um certo ponto, mas a abordagem síncrona do manager limita a quantidade de agents que podem ser monitorados eficientemente. Para um número muito grande de agents, o tempo de consulta se torna proibitivo. Uma solução seria implementar o manager de forma assíncrona, permitindo consultas paralelas e reduzindo o tempo total de coleta. Esses efeitos podem ser piorados com árvores de MIB mais complexas, onde a consulta de um OID pode envolver múltiplas operações.
+
+\section{Limitações e melhorias futuras}
+\begin{itemize}
+	\item \textbf{Gerenciamento de falhas}: o manager bloqueia a execução enquanto aguarda por um timeout, o que pode ser melhorado com uma abordagem assíncrona.
+	\item \textbf{Escalabilidade}: o manager atual tem um desempenho linear com o número de agents. Implementar consultas paralelas poderia melhorar a escalabilidade.
+	\item \textbf{Segurança}: o protocolo de texto puro é vulnerável a ataques de injeção. Implementar autenticação e criptografia seria uma melhoria importante.
+	\item \textbf{MIB mais complexa}: a implementação atual é simplificada. Adicionar suporte para operações como SET e GETNEXT, além de uma estrutura de MIB mais hierárquica, tornaria o sistema mais robusto e realista.
+\end{itemize}
+
+\section{Comparação conceitual com SNMP real}
+
+O protótipo desenvolvido neste trabalho usa um protocolo textual simples e uma árvore de OIDs própria para expor métricas, enquanto o SNMP real é um padrão maduro que define MIBs padronizadas, codificação (ASN.1/BER) e um conjunto de operações (GET, GETNEXT, GETBULK, SET, TRAP). Em termos práticos, isso significa que o protótipo é muito mais simples de implementar e entender, mas não é compatível com ferramentas SNMP existentes nem fornece as mesmas garantias de interoperabilidade.
+
+Outra diferença importante é o transporte e a escalabilidade: SNMP comumente usa UDP e inclui operações (como GETBULK) para reduzir overhead em grandes infraestruturas; já o manager aqui usa TCP e consultas síncronas, o que facilita confiabilidade, porém provoca crescimento linear do tempo de coleta com o número de agentes. Melhorias para aproximar o protótipo do comportamento de SNMP envolveriam suporte a consultas paralelas e a operações de bulk.
+
+Por fim, há diferenças de segurança e funcionalidades avançadas: SNMPv3 oferece autenticação e criptografia, além de notificações assíncronas (TRAPs), enquanto o protótipo não implementa segurança nem notificações. Tornar o sistema mais próximo do SNMP real exigiria adoção de codificação padronizada, operações adicionais e mecanismos de segurança.
 
 \end{document}
