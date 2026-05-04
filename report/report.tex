@@ -5,6 +5,7 @@
 \usepackage[brazil]{babel}
 \usepackage{geometry}
 \usepackage{hyperref}
+\usepackage{url}
 \usepackage{array}
 \usepackage{longtable}
 \usepackage{enumitem}
@@ -14,7 +15,7 @@
 \setlist[itemize]{noitemsep, topsep=2pt}
 
 \title{Relatório do Trabalho Prático 2}
-\author{Preencher com os nomes do grupo}
+\author{Felipe Kelemen, Gustavo Bastos, Octavio Carneiro}
 \date{\today}
 
 \begin{document}
@@ -44,6 +45,21 @@ O fluxo de uso é o seguinte:
 	\item o agent encaminha a consulta para a MIB e retorna uma resposta textual no formato \texttt{oid=valor;oid=valor;...};
 	\item o manager interpreta a resposta e exibe as métricas no terminal;
 \end{enumerate}
+
+\section{Arquitetura detalhada}
+Aqui descrevemos de forma sucinta os componentes centrais e seu funcionamento.
+
+\textbf{WorkerPool}: implementação simples de um pool de threads que mantém um conjunto de trabalhadores consumindo tarefas de uma fila segura. As tarefas são enfileiradas por meio de um método `enqueue`, e cada worker bloqueia em uma condição até que haja trabalho disponível. O pool também oferece um mecanismo de shutdown que sinaliza encerramento e aguarda a finalização das threads.
+
+\textbf{SocketServer}: camada genérica que cria, configura e expõe um socket TCP. O servidor realiza `bind` e `listen`, e no loop principal faz `accept` para novas conexões. Para cada conexão aceita, ele encapsula o tratamento em uma tarefa que é enviada ao \textit{WorkerPool}, garantindo que a aceitação de novas conexões não seja bloqueada pelo processamento de clientes.
+
+\textbf{AgentServer}: especialização do \texttt{SocketServer} usada pelo agente. Além de herdar a lógica de aceitação e despacho de conexões, o \texttt{AgentServer} possui um \texttt{MetricsCollector} e registra getters na árvore MIB. Ao receber uma requisição (por exemplo \texttt{GET <oid>}) o servidor encaminha para a MIB, obtém os valores e envia a resposta textual ao gerente.
+
+\textbf{MetricsCollector}: componente que executa em background e faz a leitura periódica de fontes do sistema (\texttt{/proc/stat}, \texttt{/proc/meminfo}, \texttt{/proc/uptime}, \path{/sys/class/net/<iface>/statistics}). Ele mantém o último snapshot e calcula deltas (por exemplo, uso de CPU e taxas de rede) antes de atualizar uma estrutura compartilhada \texttt{MetricsData}. O acesso a essa estrutura é protegido por mutex para garantir consistência entre threads.
+
+\textbf{Manager}: processo que recebe uma lista de \texttt{IP:porta}, estabelece conexões TCP persistentes com cada agent e envia comandos do tipo \texttt{GET .} para coletar todas as folhas da MIB. O manager opera de forma síncrona na versão atual: conecta-se, envia a requisição, aguarda resposta com timeout, faz o parse textual e registra o histórico. Ele também trata reconexões e imprime um resumo das métricas recebidas.
+
+Esses componentes juntos formam um pipeline simples e eficiente para coleta e exposição de métricas: o \texttt{MetricsCollector} mantém os dados atualizados no agente; o \texttt{AgentServer} fornece acesso via MIB; o \texttt{SocketServer} e \texttt{WorkerPool} cuidam de I/O e concorrência; e o \texttt{Manager} centraliza consultas e consolidação das informações.
 
 \section{Implementação dos agentes}
 O ponto de entrada do agent está em \texttt{src/agents.cpp}. Esse módulo configura o servidor, registra as métricas na MIB e trata o ciclo de vida do processo.
@@ -162,7 +178,7 @@ O sistema é escalável até um certo ponto, mas a abordagem síncrona do manage
 
 \section{Comparação conceitual com SNMP real}
 
-O protótipo desenvolvido neste trabalho usa um protocolo textual simples e uma árvore de OIDs própria para expor métricas, enquanto o SNMP real é um padrão maduro que define MIBs padronizadas, codificação (ASN.1/BER) e um conjunto de operações (GET, GETNEXT, GETBULK, SET, TRAP). Em termos práticos, isso significa que o protótipo é muito mais simples de implementar e entender, mas não é compatível com ferramentas SNMP existentes nem fornece as mesmas garantias de interoperabilidade.
+O protótipo desenvolvido neste trabalho usa um protocolo textual simples e uma árvore de OIDs própria para expor métricas, enquanto o SNMP real é um padrão maduro que define MIBs padronizadas e um conjunto de operações (GET, GETNEXT, GETBULK, SET, TRAP). Em termos práticos, isso significa que o protótipo é muito mais simples de implementar e entender, mas não é compatível com ferramentas SNMP existentes nem fornece as mesmas garantias de interoperabilidade.
 
 Outra diferença importante é o transporte e a escalabilidade: SNMP comumente usa UDP e inclui operações (como GETBULK) para reduzir overhead em grandes infraestruturas; já o manager aqui usa TCP e consultas síncronas, o que facilita confiabilidade, porém provoca crescimento linear do tempo de coleta com o número de agentes. Melhorias para aproximar o protótipo do comportamento de SNMP envolveriam suporte a consultas paralelas e a operações de bulk.
 
