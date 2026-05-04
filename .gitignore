@@ -6,6 +6,17 @@ manager
 *.out
 .DS_Store
 
+# Python artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.venv/
+venv/
+env/
+
 # CMake build artifacts
 CMakeCache.txt
 cmake_install.cmake
