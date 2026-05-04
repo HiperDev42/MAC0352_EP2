@@ -1,0 +1,74 @@
+\documentclass{beamer}
+\usetheme{Madrid}
+\usepackage[utf8]{inputenc}
+\usepackage[brazil]{babel}
+
+\title{Relatório do Trabalho Prático 2}
+\author{Felipe Kelemen \\ Gustavo Bastos \\ Octavio Carneiro}
+\date{\today}
+
+\begin{document}
+
+\begin{frame}
+  \titlepage
+\end{frame}
+
+\begin{frame}{Visão geral}
+\begin{itemize}
+  \item Arquitetura: \textbf{Agent}, \textbf{Manager}, \textbf{MIB}
+  \item Objetivo: coletar e expor métricas do sistema de forma simples e eficiente
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Fluxo de comunicação}
+\begin{enumerate}
+  \item Cada \textbf{agent} coleta métricas localmente e expõe via TCP
+  \item O \textbf{manager} conecta nos agents e solicita \texttt{GET <oid>} ou \texttt{GET .}
+  \item Resposta: string no formato \texttt{oid=valor;oid=valor;...}
+\end{enumerate}
+\end{frame}
+
+\begin{frame}{Componentes principais}
+\begin{itemize}
+  \item \textbf{MetricsCollector}: leitura de /proc e /sys, calcula deltas
+  \item \textbf{SocketServer + WorkerPool}: aceita conexões e processa clientes
+  \item \textbf{MIB (árvore)}: registra getters por OID e serializa respostas
+  \item \textbf{Manager}: cliente síncrono que consolida métricas
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Métricas coletadas}
+\begin{itemize}
+  \item Uso de CPU (\%)
+  \item Uso de memória (\%)
+  \item Uptime (s)
+  \item Taxas de rede (bytes/s)
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Principais decisões de projeto}
+\begin{itemize}
+  \item Protocolo textual simples facilita depuração
+  \item Consulta \texttt{GET .} retorna todas as folhas — menor overhead de protocolo
+  \item Manager síncrono: simples, porém escala linearmente com número de agents
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Resultados resumidos}
+\begin{itemize}
+  \item Testes com falhas de agentes: reconexão automática funciona
+  \item Escalabilidade: até 1000 agents testados; tempo de consulta cresce linearmente
+  \item Latência: resposta por agent muito baixa; total cresce com número de agentes
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Limitações e melhorias}
+\begin{itemize}
+  \item Tornar o \textbf{manager} assíncrono para consultas paralelas
+  \item Adicionar segurança (autenticação/criptografia)
+  \item Expandir MIB para operações adicionais (SET, GETNEXT, etc.)
+\end{itemize}
+\end{frame}
+
+
+\end{document}
