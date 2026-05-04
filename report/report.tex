@@ -1,0 +1,161 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[brazil]{babel}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{enumitem}
+\usepackage{booktabs}
+
+\geometry{margin=2.5cm}
+\setlist[itemize]{noitemsep, topsep=2pt}
+
+\title{Relatório do Trabalho Prático 2}
+\author{Preencher com os nomes do grupo}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Este relatório apresenta a solução desenvolvida para o Trabalho Prático 2 da disciplina, cujo objetivo foi construir uma arquitetura distribuída composta por agentes de coleta, um gerenciador central e uma MIB simplificada para exposição de métricas do sistema. Também é descrita a ferramenta de visualização em Streamlit criada para acompanhar as métricas em tempo real.
+\end{abstract}
+
+\section{Introdução}
+O projeto implementa um sistema cliente-servidor em C++ para monitoramento de recursos da máquina. Cada \textit{agent} coleta dados locais do sistema operacional, o \textit{manager} consulta os agentes periodicamente e consolida as respostas, e a MIB organiza as métricas em uma árvore de OIDs que pode ser consultada por nome hierárquico. Como apoio à análise dos resultados, foi criado um dashboard em Streamlit para exibir os dados em gráficos.
+
+\section{Objetivos}
+Os principais objetivos do trabalho foram:
+\begin{itemize}
+	\item coletar métricas de CPU, memória, uptime e rede do sistema;
+	\item expor essas métricas por meio de uma interface baseada em OIDs;
+	\item permitir que um gerente central consulte múltiplos agentes;
+	\item manter a comunicação simples, textual e extensível;
+	\item disponibilizar uma visualização gráfica para acompanhamento em tempo real.
+\end{itemize}
+
+\section{Visão geral da arquitetura}
+O sistema é dividido em quatro partes principais:
+\begin{itemize}
+	\item \textbf{Agent}: processo responsável por coletar métricas locais e responder requisições da rede.
+	\item \textbf{Manager}: processo que se conecta aos agents, solicita os dados e imprime as métricas recebidas.
+	\item \textbf{MIB}: estrutura em árvore responsável por mapear OIDs para funções que retornam valores de métricas.
+	\item \textbf{Dashboard}: aplicação Streamlit que consome os agents e plota gráficos históricos.
+\end{itemize}
+
+\subsection{Fluxo de comunicação}
+O fluxo de uso é o seguinte:
+\begin{enumerate}
+	\item cada agent inicializa um servidor TCP e passa a escutar conexões;
+	\item o agent também inicia uma thread de coleta de métricas com atualização periódica;
+	\item o manager abre conexões com um ou mais agents;
+	\item para cada consulta, o manager envia comandos do tipo \texttt{GET <oid>};
+	\item o agent encaminha a consulta para a MIB e retorna uma resposta textual no formato \texttt{oid=valor;oid=valor;...};
+	\item o manager interpreta a resposta e exibe as métricas no terminal;
+	\item o dashboard pode consultar os mesmos agents para gerar gráficos e histórico.
+\end{enumerate}
+
+\section{Implementação dos agentes}
+O ponto de entrada do agent está em \texttt{src/agents.cpp}. Esse módulo configura o servidor, registra as métricas na MIB e trata o ciclo de vida do processo.
+
+\subsection{Coleta de métricas}
+A coleta é implementada em \texttt{src/metrics.cpp}. As métricas são obtidas diretamente de arquivos do Linux:
+\begin{itemize}
+	\item \texttt{/proc/stat} para calcular o uso de CPU por diferença entre snapshots;
+	\item \texttt{/proc/meminfo} para calcular uso de memória;
+	\item \texttt{/proc/uptime} para obter o tempo de atividade do sistema;
+	\item \texttt{/sys/class/net/<iface>/statistics/tx\_bytes} e \texttt{rx\_bytes} para medir o tráfego da interface de rede.
+\end{itemize}
+
+O \texttt{MetricsCollector} executa em background e atualiza uma estrutura \texttt{MetricsData} com:
+\begin{itemize}
+	\item uso de CPU em porcentagem;
+	\item uso de memória em porcentagem;
+	\item uptime em segundos;
+	\item taxa de transmissão e recepção em bytes por segundo.
+\end{itemize}
+
+\subsection{Servidor de sockets}
+O servidor genérico está em \texttt{src/server.cpp}. Ele implementa:
+\begin{itemize}
+	\item criação e configuração do socket TCP;
+	\item reutilização de endereço com \texttt{SO\_REUSEADDR};
+	\item aceitação de conexões;
+	\item fila de tarefas com \textit{worker pool};
+	\item leitura e envio de mensagens em texto puro.
+\end{itemize}
+
+Cada conexão com o manager é mantida aberta enquanto houver requisições válidas, permitindo múltiplas consultas na mesma sessão.
+
+\subsection{MIB simplificada}
+A estrutura de MIB está em \texttt{src/mib.cpp}. Ela implementa uma árvore hierárquica na qual cada nó pode ter um \textit{getter} associado. As métricas são registradas nos seguintes OIDs:
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+OID & Métrica \\
+\midrule
+\texttt{.1.1} & \texttt{cpu\_usage} \\
+\texttt{.1.2} & \texttt{memory\_usage} \\
+\texttt{.1.3} & \texttt{uptime\_seconds} \\
+\texttt{.2.1} & \texttt{upload\_bytes} \\
+\texttt{.2.2} & \texttt{download\_bytes} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Ao receber \texttt{GET .}, a árvore retorna todas as folhas registradas abaixo da raiz, serializadas em uma string única. Isso simplifica a consulta do manager, que recebe um pacote com todas as métricas em vez de solicitar cada OID separadamente.
+
+\section{Implementação do manager}
+O manager está em \texttt{src/manager.cpp}. Ele recebe uma lista de endereços IP:porta pela linha de comando, conecta-se aos agents e faz requisições periódicas.
+
+O parser de resposta converte a string recebida em valores numéricos e associa cada OID às métricas correspondentes. Na saída, o manager formata os dados em unidades amigáveis, como porcentagem, segundos e Kbps.
+
+Entre os principais pontos de implementação, destacam-se:
+\begin{itemize}
+	\item reconexão automática quando um agent não está disponível;
+	\item tratamento de timeout e falhas de socket;
+	\item conversão das taxas de rede para Kbps na apresentação;
+	\item impressão periódica do estado de cada agent.
+\end{itemize}
+
+\section{Dashboard em Streamlit}
+Além do executável em C++, foi criado um dashboard em Python para observação visual do sistema. A interface lê as métricas coletadas pelos agents e exibe:
+\begin{itemize}
+	\item gráficos de CPU e memória ao longo do tempo;
+	\item gráfico com taxas de upload e download;
+	\item indicadores do estado da conexão;
+	\item tabela com o histórico recente das medições.
+\end{itemize}
+
+Essa camada não altera a lógica do sistema principal, mas facilita a validação experimental e a interpretação do comportamento dos agents.
+
+\section{Organização do projeto}
+Os principais arquivos do projeto são:
+\begin{longtable}{p{0.28\textwidth}p{0.64\textwidth}}
+\toprule
+Arquivo & Função \\
+\midrule
+\endhead
+\texttt{src/agents.cpp} & Inicialização do agent, registro das métricas e tratamento das requisições. \\
+\texttt{src/metrics.cpp} & Leitura dos dados do sistema e cálculo das métricas. \\
+\texttt{src/server.cpp} & Implementação do servidor TCP e do pool de threads. \\
+\texttt{src/mib.cpp} & Estrutura da árvore de OIDs e serialização das respostas. \\
+\texttt{src/manager.cpp} & Cliente responsável por consultar os agents e mostrar os resultados. \\
+\texttt{run.py} & Script auxiliar para iniciar múltiplos agents e o manager localmente. \\
+\texttt{dashboard.py} & Dashboard Streamlit para visualização gráfica das métricas. \\
+\bottomrule
+\end{longtable}
+
+\section{Execução}
+O projeto é compilado com CMake e possui dois executáveis principais: \texttt{agent} e \texttt{manager}. Para testes locais, o script \texttt{run.py} inicia múltiplos agents em portas consecutivas e depois executa o manager apontando para todos eles.
+
+O dashboard pode ser executado separadamente para consumir os agents ativos e apresentar os gráficos em tempo real.
+
+\section{Conclusão}
+A solução atende ao objetivo de monitorar métricas do sistema por meio de uma arquitetura distribuída simples, extensível e fácil de observar. O uso de OIDs organiza a exposição das métricas, o manager consolida as informações dos agents e o dashboard oferece uma visualização mais amigável para análise.
+
+\end{document}
